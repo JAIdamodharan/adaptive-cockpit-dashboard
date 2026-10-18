@@ -184,6 +184,79 @@ The desktop app (PyQt5) cannot run on Vercel, so the `web/` folder is a browser 
 | PyQt dashboard | HTML, CSS and canvas gauges |
 | `afplay` / sounddevice alarm | Web Audio API |
 
+### Web architecture
+
+```mermaid
+flowchart LR
+    subgraph Browser["User's browser (all processing happens here)"]
+        CAM[/Webcam via getUserMedia/] --> VID[video element]
+        VID --> FL[MediaPipe Face Landmarker<br/>WASM + GPU]
+        FL -->|478 landmarks + pose matrix| FE[Feature extraction<br/>EAR, MAR, head pitch/yaw]
+        FE --> ENG[engine.js<br/>calibration, PERCLOS, fusion]
+        ENG --> UI[Dashboard UI<br/>canvas gauges, state, theme]
+        ENG --> AUD[Web Audio alarm<br/>repeats every 2 s]
+        FL --> OVL[Overlay canvas<br/>eye and mouth points]
+        DEMO[Demo mode<br/>simulated EAR signal] -.-> ENG
+    end
+    subgraph Vercel["Vercel (static hosting, HTTPS)"]
+        STATIC[index.html, app.js, engine.js, style.css]
+    end
+    CDN[(jsDelivr CDN<br/>tasks-vision WASM)] --> FL
+    GCS[(Google storage<br/>face_landmarker.task)] --> FL
+    STATIC -->|served once| Browser
+```
+
+No video, landmarks or scores are sent to any server. Vercel only serves the static files; the face model and WASM runtime are downloaded from public CDNs.
+
+### Web frame loop
+
+```mermaid
+sequenceDiagram
+    participant V as Video element
+    participant L as FaceLandmarker
+    participant A as app.js
+    participant E as DrowsinessEngine
+    participant U as UI and alarm
+    loop every animation frame with a new video frame
+        A->>L: detectForVideo(frame)
+        alt face found
+            L-->>A: landmarks + transformation matrix
+            A->>A: EAR (median of 3 + EMA), MAR, pitch/yaw
+            A->>E: update(t, ear, mar, pitch, yaw)
+        else no face
+            A->>E: update(t, null) never counts as closed eyes
+        end
+        E-->>A: level, state, perclos, calibrated
+        A->>U: render gauges, badge, theme
+        opt level >= 0.65 or state drowsy
+            A->>U: beep() at most every 2 s
+        end
+    end
+```
+
+### Deployment pipeline
+
+```mermaid
+flowchart LR
+    DEV[git push to main] --> GH[(GitHub repo)]
+    DEV -->|npx vercel deploy --prod| VC[Vercel build<br/>framework: none, static]
+    VC -->|outputDirectory: web| EDGE[Vercel edge network]
+    IGN[.vercelignore<br/>excludes Python sources] -.-> VC
+    CFG[vercel.json<br/>Permissions-Policy: camera=self] -.-> EDGE
+    EDGE --> USER[https://adaptive-cockpit-dashboard.vercel.app]
+```
+
+### Desktop and web share one design
+
+```mermaid
+flowchart TB
+    SPEC[Same detection design<br/>calibration, PERCLOS 30 s, hysteresis, micro-sleep]
+    SPEC --> PY[Desktop: src/drowsiness_engine.py<br/>tested with pytest]
+    SPEC --> JS[Web: web/engine.js<br/>tested with node --test]
+    PY --> QT[PyQt5 dashboard + OpenCV + afplay]
+    JS --> WEB[Browser dashboard + MediaPipe web + Web Audio]
+```
+
 Use **Start camera** for live detection or **Demo (no camera)** to watch a simulated driver go from alert to drowsy. The web version has the calibrated engine, PERCLOS, yawns, head pose, repeating alarm and adaptive theme, plus a simple speed gauge. It does not include the emotion model or the behaviour analyzer.
 
 Run it locally and test the engine:
