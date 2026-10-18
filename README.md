@@ -155,6 +155,7 @@ adaptive-dashboard-system/
 │   ├── vehicle_simulator.py    # telemetry simulation
 │   ├── behavior_analyzer.py    # driving behaviour scoring
 │   └── decision_engine.py      # adaptation rules
+├── web/                        # browser version (deployed on Vercel)
 ├── config/settings.json        # thresholds and weights
 ├── tests/                      # pytest suite
 ├── docs/                       # design documents and images
@@ -165,19 +166,36 @@ adaptive-dashboard-system/
 
 The Alerts & Insights panel shows a mirrored live camera view with eye and mouth landmarks. The border and caption follow the driver state (green normal, amber fatigued, red drowsy) and show calibration progress and PERCLOS.
 
-## Deploying to the web (Vercel)
+## Web version (Vercel)
 
-This app is a PyQt5 desktop program, so it **cannot run on Vercel as is**: Vercel hosts static sites and short-lived serverless functions, not desktop GUIs or long-running video processing. A web version with real camera access is possible if the detection runs **in the browser**:
+**Live demo: https://adaptive-cockpit-dashboard.vercel.app**
 
-| Piece | Web equivalent |
-|-------|----------------|
-| OpenCV camera capture | `navigator.mediaDevices.getUserMedia` (needs HTTPS, which Vercel provides) |
-| MediaPipe Face Mesh (Python) | MediaPipe Face Landmarker for the web (WASM, runs client-side) |
-| `drowsiness_engine.py` | Port to TypeScript (it is pure logic with no OpenCV or Qt) |
+The desktop app (PyQt5) cannot run on Vercel, so the `web/` folder is a browser version of the driver-monitoring dashboard. Detection runs entirely in the browser, and video is never uploaded.
+
+| Desktop | Web |
+|---------|-----|
+| OpenCV camera capture | `getUserMedia` (needs HTTPS, which Vercel provides) |
+| MediaPipe Face Mesh (Python) | MediaPipe Face Landmarker (WASM, client-side) |
+| `src/drowsiness_engine.py` | `web/engine.js` (same thresholds and logic) |
 | PyQt dashboard | HTML, CSS and canvas gauges |
-| Alarm | Web Audio API |
+| `afplay` / sounddevice alarm | Web Audio API |
 
-Video would never leave the user's device, which is also better for privacy. This port is not implemented yet.
+Use **Start camera** for live detection or **Demo (no camera)** to watch a simulated driver go from alert to drowsy. The web version has the calibrated engine, PERCLOS, yawns, head pose, repeating alarm and adaptive theme, plus a simple speed gauge. It does not include the emotion model or the behaviour analyzer.
+
+Run it locally and test the engine:
+
+```bash
+cd web && python3 -m http.server 8000   # open http://localhost:8000
+node --test web/engine.test.mjs
+```
+
+Deploy your own copy:
+
+```bash
+npx vercel deploy --prod
+```
+
+`vercel.json` serves the `web/` folder as a static site and `.vercelignore` keeps the Python sources out of the deployment.
 
 ## Getting started
 

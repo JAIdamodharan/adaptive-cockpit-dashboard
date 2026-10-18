@@ -12,3 +12,6 @@ __pycache__/
 *.h5
 models/
 camera_config.json
+.vercel/
+node_modules/
+.vercel
