@@ -15,6 +15,7 @@ Pipeline
    stays silent until calibration has finished.
 """
 
+import math
 from collections import deque
 from dataclasses import dataclass, field
 from statistics import median
@@ -44,8 +45,8 @@ class DrowsinessConfig:
     microsleep_s: float = 1.50
 
     # Windows (seconds)
-    perclos_window_s: float = 60.0
-    event_window_s: float = 60.0
+    perclos_window_s: float = 30.0
+    event_window_s: float = 30.0
     yawn_window_s: float = 300.0
 
     # Yawn: mouth open long enough
@@ -64,8 +65,8 @@ class DrowsinessConfig:
     w_head_down: float = 0.15
 
     # Score smoothing and hysteresis
-    rise_alpha: float = 0.35
-    fall_alpha: float = 0.08
+    rise_tau_s: float = 1.0     # time constants, so behaviour does not depend on frame rate
+    fall_tau_s: float = 4.0
     fatigued_enter: float = 0.35
     fatigued_exit: float = 0.25
     drowsy_enter: float = 0.65
@@ -279,6 +280,7 @@ class DrowsinessEngine:
         self.head_down.reset()
         self.yawns.reset()
         self._score = 0.0
+        self._last_t: Optional[float] = None
         self._state = "calibrating"
         self.last = DrowsinessAssessment()
 
@@ -331,7 +333,7 @@ class DrowsinessEngine:
         mean_dur = self.blinks.mean_blink_duration
         return {
             "perclos": _clip01((perclos - 0.08) / (0.30 - 0.08)),
-            "long_closures": _clip01(len(self.blinks.long_closures) / 3.0),
+            "long_closures": _clip01(len(self.blinks.long_closures) / 2.0),
             "blink_duration": 0.0 if mean_dur is None else _clip01((mean_dur - 0.20) / 0.20),
             "yawns": _clip01(self.yawns.recent_count / 3.0),
             "head_down": _clip01(self.head_down.ratio() / 0.20),
@@ -363,7 +365,10 @@ class DrowsinessEngine:
         if not valid:
             target = 0.0  # unusable frame: decay, never escalate
 
-        alpha = cfg.rise_alpha if target > self._score else cfg.fall_alpha
+        dt = max(0.0, min(1.0, t - self._last_t)) if self._last_t is not None else 0.1
+        self._last_t = t
+        tau = cfg.rise_tau_s if target > self._score else cfg.fall_tau_s
+        alpha = 1.0 - math.exp(-dt / tau)
         self._score += alpha * (target - self._score)
         self._score = _clip01(self._score)
         if microsleep:

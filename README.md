@@ -30,7 +30,7 @@ flowchart LR
     Q -- yes --> E[EAR median filter + EMA]
     E --> C[Calibration<br/>first 10 s: personal baseline]
     C --> B[Blink tracker<br/>blink vs long closure vs micro-sleep]
-    B --> P[PERCLOS<br/>closed time over 60 s]
+    B --> P[PERCLOS<br/>closed time over 30 s]
     L --> Y[Yawn detector<br/>mouth open at least 1.2 s]
     L --> H[Head pose<br/>pitch relative to neutral]
     P --> S[Fusion score + hysteresis]
@@ -43,7 +43,7 @@ flowchart LR
 
 | Cue | Weight | Notes |
 |-----|-------:|-------|
-| PERCLOS (60 s) | 0.40 | 30% or more alone forces a drowsy verdict |
+| PERCLOS (30 s) | 0.40 | 30% or more alone forces a drowsy verdict |
 | Long eye closures (0.5 s or more) | 0.20 | three in a minute saturates |
 | Mean blink duration | 0.10 | needs at least three blinks |
 | Yawns (5 min) | 0.15 | duration based, so talking is ignored |
@@ -51,7 +51,7 @@ flowchart LR
 
 - **Calibration:** the first 10 seconds learn the driver's open-eye EAR, so glasses, eye shape and camera angle no longer break a fixed 0.20 threshold. No alert fires while calibrating. Call `DriverMonitor.recalibrate()` for a new driver.
 - **Micro-sleep:** one continuous closure of 1.5 s or more goes straight to drowsy.
-- **Hysteresis:** separate enter and exit thresholds stop the state from flickering.
+- **Hysteresis and smoothing:** separate enter and exit thresholds plus a time-based score filter (rises in about 1 s, falls in about 4 s) stop the state from flickering and keep behaviour independent of frame rate.
 - **Fusion with the vehicle:** a fatigued driver whose behaviour risk is above 0.5 (or stability below 0.4) is escalated to drowsy by the decision engine.
 - **Alarm:** while drowsiness stays high (drowsy state or level 0.65+), the alarm repeats every 2 s and the header turns red with "DROWSY!". On macOS it uses the system sound player, so it still works when the audio library cannot open a device.
 - **Robustness:** frames with no face or an extreme head turn are skipped, never treated as closed eyes. Processing runs at about 30 FPS so short blinks are seen.
@@ -160,6 +160,24 @@ adaptive-dashboard-system/
 ├── docs/                       # design documents and images
 └── requirements.txt
 ```
+
+## Live camera preview
+
+The Alerts & Insights panel shows a mirrored live camera view with eye and mouth landmarks. The border and caption follow the driver state (green normal, amber fatigued, red drowsy) and show calibration progress and PERCLOS.
+
+## Deploying to the web (Vercel)
+
+This app is a PyQt5 desktop program, so it **cannot run on Vercel as is**: Vercel hosts static sites and short-lived serverless functions, not desktop GUIs or long-running video processing. A web version with real camera access is possible if the detection runs **in the browser**:
+
+| Piece | Web equivalent |
+|-------|----------------|
+| OpenCV camera capture | `navigator.mediaDevices.getUserMedia` (needs HTTPS, which Vercel provides) |
+| MediaPipe Face Mesh (Python) | MediaPipe Face Landmarker for the web (WASM, runs client-side) |
+| `drowsiness_engine.py` | Port to TypeScript (it is pure logic with no OpenCV or Qt) |
+| PyQt dashboard | HTML, CSS and canvas gauges |
+| Alarm | Web Audio API |
+
+Video would never leave the user's device, which is also better for privacy. This port is not implemented yet.
 
 ## Getting started
 
