@@ -579,6 +579,7 @@ class DriverMonitor(QObject):
     def _process_frame_mediapipe(self, frame, timestamp):
         """MediaPipe path: calibrated, PERCLOS-based drowsiness estimation."""
         self._frame_count += 1
+        self._frame_wh = (frame.shape[1], frame.shape[0])
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.face_mesh.process(rgb_frame)
 
@@ -778,7 +779,9 @@ class DriverMonitor(QObject):
             eye_points = []
             for idx in eye_indices:
                 landmark = landmarks.landmark[idx]
-                eye_points.append((landmark.x, landmark.y))
+                # scale by frame size: normalised x/y have different pixel units
+                fw, fh = getattr(self, '_frame_wh', (1, 1))
+                eye_points.append((landmark.x * fw, landmark.y * fh))
             
             if len(eye_points) >= 6:
                 # Vertical distances (p2-p6 and p3-p5)

@@ -15,7 +15,9 @@ let earWin = [], prevEar = 0.3, prevMar = 0.1;
 const vehicle = { speed: 0, rpm: 0, fuel: 78, temp: 40, accel: false, brake: false };
 
 // ---------- helpers ----------
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+// Landmarks are normalised per axis, so scale by the frame size first or EAR/MAR are inflated by the aspect ratio
+let FRAME = { w: 640, h: 480 };
+const dist = (a, b) => Math.hypot((a.x - b.x) * FRAME.w, (a.y - b.y) * FRAME.h);
 const eyeEar = (lm, i) => (dist(lm[i[1]], lm[i[5]]) + dist(lm[i[2]], lm[i[4]])) / (2 * dist(lm[i[0]], lm[i[3]]));
 const median3 = (a) => [...a].sort((x, y) => x - y)[a.length >> 1];
 
@@ -102,6 +104,7 @@ function render(a, ear, mar, pitch, yaw) {
 }
 
 function processLandmarks(t, lm, matrix) {
+  FRAME = { w: $('video').videoWidth || 640, h: $('video').videoHeight || 480 };
   const raw = (eyeEar(lm, LEFT) + eyeEar(lm, RIGHT)) / 2;
   earWin.push(raw); if (earWin.length > 3) earWin.shift();
   const ear = 0.6 * median3(earWin) + 0.4 * prevEar; prevEar = ear;

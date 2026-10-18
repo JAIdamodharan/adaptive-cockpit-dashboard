@@ -2,6 +2,7 @@
 body[data-theme=calm]{--bg:#0b1630;--panel:#12214a;--border:#27407a;--fg:#d6e6ff;--accent:#5aa9ff}
 body[data-theme=danger]{--bg:#2a0a0c;--panel:#3b1014;--border:#8e1b24;--fg:#ffecec;--accent:#ff5252}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 "Helvetica Neue",Segoe UI,Arial,sans-serif;transition:background .6s,color .6s}
 header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;max-width:1400px;margin:0 auto}
 h1{margin:0;font-size:18px;letter-spacing:.35em}
