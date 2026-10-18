@@ -13,7 +13,10 @@ import os
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 from dataclasses import dataclass
 from typing import Optional, Tuple
-from collections import deque
+from collections import deque, Counter
+from statistics import median
+
+from drowsiness_engine import DrowsinessEngine
 
 
 def list_available_cameras(max_cameras: int = 10):
@@ -127,6 +130,9 @@ class CognitiveState:
     emotion_confidence: float = 1.0
     state_classification: str = "normal"  # normal, fatigued, drowsy, stressed
     alert_required: bool = False
+    perclos: float = 0.0              # share of last 60 s with eyes closed
+    calibrated: bool = True           # False while learning the driver's baseline
+    calibration_progress: float = 1.0
 
 
 class DriverMonitor(QObject):
@@ -205,6 +211,15 @@ class DriverMonitor(QObject):
         self.ear_history = deque(maxlen=30)
         self.prev_ear = 0.3  # For smoothing
         
+        # Calibrated drowsiness engine (PERCLOS, closure events, fusion)
+        self.engine = DrowsinessEngine()
+        self._raw_ear_window = deque(maxlen=3)   # median filter against landmark outliers
+        self._emotion_votes = deque(maxlen=7)
+        self._frame_count = 0
+        self._last_emotion = ("neutral", 0.5)
+        self._last_emit = 0.0
+        self.yawn_total = 0
+
         # New Feature tracking
         self.consecutive_yawn_frames = 0
         self.yawn_count = 0
@@ -425,11 +440,13 @@ class DriverMonitor(QObject):
             # Process frame
             self._process_frame(frame)
             
-            # Emit updated state
-            self.cognitive_state_updated.emit(self.current_state)
-            
-            # Control frame rate (aim for ~5 FPS to reduce flickering and increase stability)
-            time.sleep(0.2)
+            # Emit at most ~10 Hz; processing runs faster so short blinks are not missed
+            now = time.time()
+            if now - self._last_emit >= 0.1:
+                self._last_emit = now
+                self.cognitive_state_updated.emit(self.current_state)
+
+            time.sleep(0.03)
     
     def _process_frame(self, frame):
         """Process a single video frame for cognitive state detection"""
@@ -440,94 +457,8 @@ class DriverMonitor(QObject):
         emotion_confidence = 0.5
         
         if self.use_mediapipe:
-            # Use MediaPipe for face mesh detection
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = self.face_mesh.process(rgb_frame)
-            
-            if results.multi_face_landmarks:
-                # Get face landmarks and draw them for debugging (optional)
-                landmarks = results.multi_face_landmarks[0]
-                
-                # Calculate EAR using MediaPipe face mesh landmarks
-                # Left eye indices: [362, 385, 387, 263, 373, 380]
-                # Right eye indices: [33, 160, 158, 0, 159, 144]
-                left_eye_ear = self._calculate_ear_mediapipe(landmarks, [362, 385, 387, 263, 373, 380])
-                right_eye_ear = self._calculate_ear_mediapipe(landmarks, [33, 160, 158, 0, 159, 144])
-                
-                if left_eye_ear is not None and right_eye_ear is not None:
-                    # Average EAR of both eyes
-                    ear = (left_eye_ear + right_eye_ear) / 2.0
-                    
-                    # Apply smoothing to reduce jitter
-                    smoothing_factor = 0.6
-                    smoothed_ear = smoothing_factor * ear + (1 - smoothing_factor) * self.prev_ear
-                    self.prev_ear = smoothed_ear
-                    
-                    self.ear_history.append(smoothed_ear)
-                    
-                    # Update drowsiness level
-                    drowsiness_level = self._calculate_drowsiness_level(smoothed_ear)
-                    
-                    # Detect blinks (significant drop in EAR)
-                    self._detect_blink(smoothed_ear)
-                    
-                    # NEW: Calculate MAR and detect yawning
-                    mar = self._calculate_mar_mediapipe(landmarks)
-                    # Apply smoothing to MAR
-                    smoothed_mar = 0.5 * mar + 0.5 * self.prev_mar
-                    self.prev_mar = smoothed_mar
-                    self._detect_yawn(smoothed_mar)
-                    
-                    # NEW: Estimate head pose
-                    pitch, yaw, roll = self._estimate_head_pose_mediapipe(landmarks, frame.shape)
-                    self.head_pose_history.append((pitch, yaw, roll))
-                    
-                    # Calculate blink rate
-                    blink_rate = self._calculate_blink_rate()
-                    
-                    # Detect and classify emotion
-                    try:
-                        # Extract face region for emotion recognition
-                        face_bbox = self._extract_face_bbox(frame)
-                        if face_bbox is not None:
-                            x, y, w, h = face_bbox
-                            face_region = frame[y:y+h, x:x+w]
-                            gray_face = cv2.cvtColor(face_region, cv2.COLOR_BGR2GRAY)
-                            emotion, emotion_confidence = self._recognize_emotion(gray_face)
-                        else:
-                            # If face extraction fails, use simulated emotion
-                            emotion, emotion_confidence = self._simulated_emotion_recognition(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-                    except:
-                        # If anything goes wrong, use simulated emotion
-                        emotion, emotion_confidence = self._simulated_emotion_recognition(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-                    
-                    # Classify state - now incorporating new features
-                    state_classification = self._classify_state_enhanced(
-                        drowsiness_level, smoothed_ear, smoothed_mar, (pitch, yaw, roll), emotion
-                    )
-                    
-                    # Update current state
-                    self.current_state = CognitiveState(
-                        timestamp=timestamp,
-                        drowsiness_level=drowsiness_level,
-                        eye_aspect_ratio=smoothed_ear,
-                        mouth_aspect_ratio=smoothed_mar,
-                        head_pitch=pitch,
-                        head_yaw=yaw,
-                        head_roll=roll,
-                        blink_rate=blink_rate,
-                        yawn_count=self.yawn_count,
-                        emotion=emotion,
-                        emotion_confidence=emotion_confidence,
-                        state_classification=state_classification,
-                        alert_required=(state_classification in ["drowsy", "stressed"])
-                    )
-                else:
-                    # If EAR calculation failed (possibly due to angle, lighting, or occlusion), 
-                    # don't assume closed eyes immediately - use fallback detection method
-                    # This prevents false drowsy detection when face isn't clearly visible
-                    self._simplified_detection_with_context(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), timestamp)
-            
+            self._process_frame_mediapipe(frame, timestamp)
+
         else:
             # Fallback to OpenCV Haar Cascades
             # Convert to grayscale
@@ -615,6 +546,138 @@ class DriverMonitor(QObject):
                 self._simplified_detection_with_context(gray, timestamp)
             
 
+    def recalibrate(self):
+        """Forget the learned baseline and learn it again (e.g. new driver or camera angle)."""
+        self.engine.reset()
+        self._raw_ear_window.clear()
+        self.prev_ear = 0.3
+        logger.info("Driver calibration restarted")
+
+    def _process_frame_mediapipe(self, frame, timestamp):
+        """MediaPipe path: calibrated, PERCLOS-based drowsiness estimation."""
+        self._frame_count += 1
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.face_mesh.process(rgb_frame)
+
+        if not results.multi_face_landmarks:
+            self._handle_no_face(timestamp)
+            return
+
+        landmarks = results.multi_face_landmarks[0]
+        left = self._calculate_ear_mediapipe(landmarks, [362, 385, 387, 263, 373, 380])
+        right = self._calculate_ear_mediapipe(landmarks, [33, 160, 158, 133, 153, 144])
+        if left is None or right is None:
+            self._handle_no_face(timestamp)
+            return
+
+        # Median of the last few raw values removes single-frame landmark glitches,
+        # then a light EMA smooths the rest
+        self._raw_ear_window.append((left + right) / 2.0)
+        ear = float(median(self._raw_ear_window))
+        smoothed_ear = 0.6 * ear + 0.4 * self.prev_ear
+        self.prev_ear = smoothed_ear
+        self.ear_history.append(smoothed_ear)
+
+        mar = self._calculate_mar_mediapipe(landmarks)
+        smoothed_mar = 0.5 * mar + 0.5 * self.prev_mar
+        self.prev_mar = smoothed_mar
+
+        pitch, yaw, roll = self._estimate_head_pose_mediapipe(landmarks, frame.shape)
+        self.head_pose_history.append((pitch, yaw, roll))
+
+        before = self.engine.yawns.recent_count
+        assessment = self.engine.update(timestamp, smoothed_ear, smoothed_mar, pitch, yaw)
+        if self.engine.yawns.recent_count > before:
+            self.yawn_total += 1
+            logger.info(f"Yawn detected! Total count: {self.yawn_total}")
+
+        # Emotion is expensive and changes slowly: every 5th frame, majority-voted
+        if self._frame_count % 5 == 0:
+            self._update_emotion(frame, landmarks)
+        emotion, emotion_confidence = self._last_emotion
+
+        state_classification = self._classify_from_assessment(
+            assessment, (pitch, yaw, roll), emotion, emotion_confidence)
+
+        self.current_state = CognitiveState(
+            timestamp=timestamp,
+            drowsiness_level=assessment.level,
+            eye_aspect_ratio=smoothed_ear,
+            mouth_aspect_ratio=smoothed_mar,
+            head_pitch=pitch,
+            head_yaw=yaw,
+            head_roll=roll,
+            blink_rate=self.engine.blink_rate_per_min if assessment.calibrated else 20.0,
+            yawn_count=self.yawn_total,
+            emotion=emotion,
+            emotion_confidence=emotion_confidence,
+            state_classification=state_classification,
+            alert_required=(state_classification in ["drowsy", "stressed"]),
+            perclos=assessment.perclos,
+            calibrated=assessment.calibrated,
+            calibration_progress=assessment.calibration_progress,
+        )
+
+    def _handle_no_face(self, timestamp):
+        """Face lost / unusable frame: never fabricate data and never count it as closed eyes."""
+        assessment = self.engine.update(timestamp, None)
+        prev = self.current_state
+        state = prev.state_classification if assessment.state != "normal" else "normal"
+        if state in ("stressed", "alert"):
+            state = "normal"
+        self.current_state = CognitiveState(
+            timestamp=timestamp,
+            drowsiness_level=assessment.level,
+            eye_aspect_ratio=prev.eye_aspect_ratio,
+            mouth_aspect_ratio=prev.mouth_aspect_ratio,
+            head_pitch=prev.head_pitch,
+            head_yaw=prev.head_yaw,
+            head_roll=prev.head_roll,
+            blink_rate=prev.blink_rate,
+            yawn_count=self.yawn_total,
+            emotion=prev.emotion,
+            emotion_confidence=prev.emotion_confidence,
+            state_classification=state,
+            alert_required=(state in ["drowsy", "stressed"]),
+            perclos=assessment.perclos,
+            calibrated=assessment.calibrated,
+            calibration_progress=assessment.calibration_progress,
+        )
+
+    def _update_emotion(self, frame, landmarks):
+        """Crop the face from the landmark extents and update the voted emotion."""
+        try:
+            h, w = frame.shape[:2]
+            xs = [lm.x for lm in landmarks.landmark]
+            ys = [lm.y for lm in landmarks.landmark]
+            x0, x1 = max(0, int(min(xs) * w)), min(w, int(max(xs) * w))
+            y0, y1 = max(0, int(min(ys) * h)), min(h, int(max(ys) * h))
+            if x1 - x0 < 40 or y1 - y0 < 40:
+                return
+            gray = cv2.cvtColor(frame[y0:y1, x0:x1], cv2.COLOR_BGR2GRAY)
+            label, conf = self._recognize_emotion(gray)
+            self._emotion_votes.append((label, conf))
+            top, _ = Counter(l for l, _ in self._emotion_votes).most_common(1)[0]
+            confs = [c for l, c in self._emotion_votes if l == top]
+            self._last_emotion = (top, float(sum(confs) / len(confs)))
+        except Exception as e:
+            logger.debug(f"Emotion update failed: {e}")
+
+    def _classify_from_assessment(self, assessment, head_pose, emotion, emotion_confidence) -> str:
+        """Map the fused drowsiness assessment (plus distraction/emotion) to a UI state."""
+        if not assessment.calibrated:
+            return "normal"          # warm-up: never alert while learning the driver
+        if assessment.state == "drowsy":
+            return "drowsy"
+        if assessment.state == "fatigued":
+            return "fatigued"
+        yaw_dev = abs(head_pose[1] - self.engine.calibrator.neutral_yaw)
+        if yaw_dev > self.YAW_THRESHOLD_DISTRACTED:
+            return "stressed"        # catch-all "attention needed" in the current UI
+        if emotion in ("angry", "fear") and emotion_confidence >= 0.7:
+            return "stressed"
+        return "normal"
+
     def _calculate_drowsiness_level(self, ear: float) -> float:
         """
         Calculate drowsiness level based on EAR with hysteresis to prevent oscillations
@@ -701,8 +764,9 @@ class DriverMonitor(QObject):
                 # EAR = (A + B) / (2 * C)
                 if C > 0:
                     ear = (A + B) / (2.0 * C)
-                    # Validate EAR is in reasonable range
-                    if 0.1 < ear < 0.6:
+                    # Closed eyes legitimately give very small EAR, so only reject
+                    # geometrically impossible values
+                    if 0.0 <= ear < 0.7:
                         return ear
         except Exception as e:
             logger.debug(f"Error calculating EAR with MediaPipe: {e}")
@@ -805,10 +869,21 @@ class DriverMonitor(QObject):
                 z = 0
 
             # Convert to degrees
-            pitch = np.degrees(x)
-            yaw = np.degrees(y)
-            roll = np.degrees(z)
-            
+            pitch = float(np.degrees(x))
+            yaw = float(np.degrees(y))
+            roll = float(np.degrees(z))
+
+            # solvePnP with this model reports pitch near +/-180 for an upright head;
+            # wrap into [-90, 90] so 'nodding' is measured around zero
+            if pitch > 90:
+                pitch -= 180
+            elif pitch < -90:
+                pitch += 180
+            if roll > 90:
+                roll -= 180
+            elif roll < -90:
+                roll += 180
+
             return pitch, yaw, roll
         
         return 0.0, 0.0, 0.0

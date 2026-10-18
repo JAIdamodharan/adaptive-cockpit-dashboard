@@ -170,6 +170,20 @@ class AdaptiveDecisionEngine(QObject):
         # Generate alerts (not debounced)
         self._generate_alerts()
     
+    def _driver_class(self) -> str:
+        """Driver state fused with driving behaviour.
+
+        Fatigue signs plus erratic driving (high risk or low stability) are much stronger
+        evidence than either alone, so a fatigued driver who also drives badly is
+        escalated to drowsy.
+        """
+        cls = self.driver_state.state_classification
+        if cls == "fatigued" and self.behavior_state is not None:
+            if (self.behavior_state.risk_index > 0.5
+                    or self.behavior_state.stability_score < 0.4):
+                return "drowsy"
+        return cls
+
     def _apply_decision_rules(self) -> UIAdaptation:
         """
         Apply rule-based decision logic to determine UI adaptation
@@ -184,7 +198,7 @@ class AdaptiveDecisionEngine(QObject):
         """
         
         # Rule 1: Critical Safety - Drowsy + Risky Behavior
-        if (self.driver_state.state_classification == "drowsy" and 
+        if (self._driver_class() == "drowsy" and 
             self.behavior_state.risk_index > 0.5):
             return UIAdaptation(
                 complexity=UIComplexity.MINIMAL,
@@ -198,7 +212,7 @@ class AdaptiveDecisionEngine(QObject):
             )
         
         # Rule 2: Driver Drowsiness
-        if self.driver_state.state_classification == "drowsy":
+        if self._driver_class() == "drowsy":
             return UIAdaptation(
                 complexity=UIComplexity.MINIMAL,
                 color_theme=ColorTheme.DANGER,
@@ -277,7 +291,7 @@ class AdaptiveDecisionEngine(QObject):
             )
         
         # Rule 8: Driver Fatigue (enhanced)
-        if self.driver_state.state_classification == "fatigued":
+        if self._driver_class() == "fatigued":
             return UIAdaptation(
                 complexity=UIComplexity.REDUCED,
                 color_theme=ColorTheme.CALM,
@@ -290,7 +304,7 @@ class AdaptiveDecisionEngine(QObject):
             )
         
         # Rule 9: Driver Stress (enhanced)
-        if self.driver_state.state_classification == "stressed":
+        if self._driver_class() == "stressed":
             return UIAdaptation(
                 complexity=UIComplexity.REDUCED,
                 color_theme=ColorTheme.CALM,
@@ -377,7 +391,7 @@ class AdaptiveDecisionEngine(QObject):
         alerts_to_trigger = []
         
         # Critical: Drowsy driver
-        if self.driver_state.state_classification == "drowsy":
+        if self._driver_class() == "drowsy":
             if not self._alert_exists("drowsy_driver"):
                 alerts_to_trigger.append(Alert(
                     priority=1,
@@ -449,7 +463,7 @@ class AdaptiveDecisionEngine(QObject):
                 ))
         
         # Info: Driver fatigue
-        if self.driver_state.state_classification == "fatigued":
+        if self._driver_class() == "fatigued":
             if not self._alert_exists("fatigue"):
                 alerts_to_trigger.append(Alert(
                     priority=3,

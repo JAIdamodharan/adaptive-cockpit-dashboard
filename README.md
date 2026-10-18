@@ -18,6 +18,53 @@ An automotive HMI simulator that watches the **driver** (webcam + computer visio
 - **Adaptive decision engine**: rule-based mapping from fused state to UI complexity, colour theme and alerts.
 - **Modern PyQt5 UI**: animated dial gauges with colour zones and redline, severity-coloured bars, four themes, floating alerts and audible alarms.
 
+## Drowsiness detection
+
+Detection is calibrated per driver and fuses several cues instead of a single fixed EAR threshold (`src/drowsiness_engine.py`):
+
+```mermaid
+flowchart LR
+    F[Camera frame] --> L[Face Mesh landmarks]
+    L --> Q{Usable frame?<br/>face found, yaw within 35°}
+    Q -- no --> D[Score decays, never counts as closed]
+    Q -- yes --> E[EAR median filter + EMA]
+    E --> C[Calibration<br/>first 10 s: personal baseline]
+    C --> B[Blink tracker<br/>blink vs long closure vs micro-sleep]
+    B --> P[PERCLOS<br/>closed time over 60 s]
+    L --> Y[Yawn detector<br/>mouth open at least 1.2 s]
+    L --> H[Head pose<br/>pitch relative to neutral]
+    P --> S[Fusion score + hysteresis]
+    B --> S
+    Y --> S
+    H --> S
+    S --> R[normal / fatigued / drowsy]
+    R --> V[Fusion with driving behaviour]
+```
+
+| Cue | Weight | Notes |
+|-----|-------:|-------|
+| PERCLOS (60 s) | 0.40 | 30% or more alone forces a drowsy verdict |
+| Long eye closures (0.5 s or more) | 0.20 | three in a minute saturates |
+| Mean blink duration | 0.10 | needs at least three blinks |
+| Yawns (5 min) | 0.15 | duration based, so talking is ignored |
+| Head down (pitch vs neutral) | 0.15 | measured against the calibrated pose |
+
+- **Calibration:** the first 10 seconds learn the driver's open-eye EAR, so glasses, eye shape and camera angle no longer break a fixed 0.20 threshold. No alert fires while calibrating. Call `DriverMonitor.recalibrate()` for a new driver.
+- **Micro-sleep:** one continuous closure of 1.5 s or more goes straight to drowsy.
+- **Hysteresis:** separate enter and exit thresholds stop the state from flickering.
+- **Fusion with the vehicle:** a fatigued driver whose behaviour risk is above 0.5 (or stability below 0.4) is escalated to drowsy by the decision engine.
+- **Robustness:** frames with no face or an extreme head turn are skipped, never treated as closed eyes. Processing runs at about 30 FPS so short blinks are seen.
+
+### Evaluate and tune
+
+```bash
+cd src
+python evaluate_drowsiness.py --synthetic        # built-in sanity benchmark
+python evaluate_drowsiness.py --csv features.csv # your labelled data
+```
+
+The script reports precision, recall, F1 and false alarms per hour. Extract per-frame features (`t,ear,mar,pitch,yaw,label`) from a labelled dataset such as NTHU-DDD or UTA-RLDD and tune `DrowsinessConfig` against those numbers. The synthetic run only checks the pipeline; it is not evidence of real-world accuracy.
+
 ## Architecture
 
 ### System overview
@@ -101,7 +148,9 @@ adaptive-dashboard-system/
 │   ├── main.py                 # entry point, wires modules via Qt signals
 │   ├── modern_dashboard_ui.py  # PyQt5 UI (gauges, themes, alerts)
 │   ├── dashboard_ui.py         # earlier UI version
-│   ├── driver_monitor.py       # computer vision / emotion model
+│   ├── driver_monitor.py       # camera, face mesh, emotion model
+│   ├── drowsiness_engine.py    # calibration, PERCLOS, fusion
+│   ├── evaluate_drowsiness.py  # offline precision/recall tool
 │   ├── vehicle_simulator.py    # telemetry simulation
 │   ├── behavior_analyzer.py    # driving behaviour scoring
 │   └── decision_engine.py      # adaptation rules

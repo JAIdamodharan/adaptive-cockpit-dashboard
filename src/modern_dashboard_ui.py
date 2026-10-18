@@ -846,7 +846,11 @@ class AdaptiveDashboardUI(QMainWindow):
 
             # Driver state
             state_text = driver_state.state_classification.upper()
-            self.driver_state_label.setText(f"DRIVER: {state_text}")
+            if not getattr(driver_state, 'calibrated', True):
+                pct = int(getattr(driver_state, 'calibration_progress', 0.0) * 100)
+                self.driver_state_label.setText(f"CALIBRATING... {pct}%  (look at the road)")
+            else:
+                self.driver_state_label.setText(f"DRIVER: {state_text}")
             
             # Update driver state styling based on state
             if state_text == "NORMAL":
