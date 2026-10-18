@@ -184,6 +184,12 @@ The desktop app (PyQt5) cannot run on Vercel, so the `web/` folder is a browser 
 | PyQt dashboard | HTML, CSS and canvas gauges |
 | `afplay` / sounddevice alarm | Web Audio API |
 
+### Web version screenshots
+
+| Fatigued (amber, calm theme) | Drowsy (red, alarm sounding) |
+|:---:|:---:|
+| ![Web version, fatigued](docs/images/web-fatigued.png) | ![Web version, drowsy](docs/images/web-drowsy.png) |
+
 ### Web architecture
 
 ```mermaid
