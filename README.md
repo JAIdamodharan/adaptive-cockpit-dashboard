@@ -6,6 +6,10 @@ An automotive HMI simulator that watches the **driver** (webcam + computer visio
 
 ![Dashboard](docs/images/dashboard.png)
 
+<sub>Danger theme (critical state): red gauges and bars, minimal UI.</sub>
+
+![Danger theme](docs/images/theme_danger.png)
+
 ## Features
 
 - **Driver monitoring**: Eye Aspect Ratio (drowsiness), Mouth Aspect Ratio (yawns), head pose, blink rate and emotion recognition (OpenCV + MediaPipe, optional Keras model).
@@ -120,6 +124,17 @@ cd src && python main.py
 On first run macOS asks for camera permission. Without a webcam the vehicle simulation and UI still run.
 
 **Emotion model:** the trained `emotion_model.h5` (about 43 MB) is not stored in git. Place your own model at the project root; the monitor falls back to the geometric features (EAR/MAR/pose) when it is absent.
+
+### Camera permission (macOS)
+
+macOS grants camera access to the app that launches Python, so run `main.py` from your own Terminal and click **Allow** on the prompt. If you see `not authorized to capture video`, enable the terminal under System Settings → Privacy & Security → Camera, then fully restart it. Without a camera, the dashboard still runs; only driver monitoring (EAR, MAR, emotion) stays idle.
+
+### Demo
+
+1. Start the app (command above). The window sizes itself to your screen.
+2. Press **Auto Drive** for random driving, or hold **Accelerate / Brake** yourself.
+3. Push speed past the limit or let temperature rise and watch the gauges change colour and alerts appear.
+4. With the camera on, close your eyes for a few seconds: drowsiness rises and the theme shifts Standard → Alert → Danger.
 
 ### Controls
 
