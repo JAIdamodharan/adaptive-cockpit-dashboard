@@ -249,8 +249,14 @@ class AdaptiveDashboardUI(QMainWindow):
     def _init_ui(self):
         """Initialize the modern user interface"""
         self.setWindowTitle("AI-Powered Adaptive Vehicle Dashboard")
-        self.setGeometry(100, 100, 1500, 1040)
-        self.setMinimumSize(1200, 900)
+        # Fit the window to the screen instead of forcing a fixed large size
+        from PyQt5.QtWidgets import QApplication
+        avail = QApplication.primaryScreen().availableGeometry()
+        width = min(1500, int(avail.width() * 0.92))
+        height = min(1040, int(avail.height() * 0.92))
+        self.resize(width, height)
+        self.move(avail.x() + (avail.width() - width) // 2, avail.y() + (avail.height() - height) // 2)
+        self.setMinimumSize(1000, 700)
 
         # Central widget
         central_widget = QWidget()
@@ -293,25 +299,24 @@ class AdaptiveDashboardUI(QMainWindow):
         self.instruments_panel = self._create_instruments_panel()
         self.driver_panel = self._create_driver_state_panel()
         
+        # Left: instruments; centre: behaviour + driver monitoring stacked
+        content_splitter.addWidget(self.instruments_panel)
+
+        self.behavior_panel = self._create_behavior_panel()
         left_splitter = QSplitter(Qt.Vertical)
         left_splitter.setHandleWidth(5)
-        left_splitter.setChildrenCollapsible(False)  # Prevent panels from collapsing
-        left_splitter.addWidget(self.instruments_panel)
+        left_splitter.setChildrenCollapsible(False)
+        left_splitter.addWidget(self.behavior_panel)
         left_splitter.addWidget(self.driver_panel)
-        left_splitter.setSizes([560, 360])
-        
+        left_splitter.setSizes([200, 420])
         content_splitter.addWidget(left_splitter)
-        
-        # Center: Behavior panel
-        self.behavior_panel = self._create_behavior_panel()
-        content_splitter.addWidget(self.behavior_panel)
-        
+
         # Right: Alerts panel
         self.alerts_panel = self._create_alerts_panel()
         content_splitter.addWidget(self.alerts_panel)
         
         # Set consistent proportional sizes for splitter
-        content_splitter.setSizes([600, 450, 450])
+        content_splitter.setSizes([520, 480, 400])
         
         # Store splitter references for maintaining consistent sizes
         self.content_splitter = content_splitter
@@ -359,7 +364,7 @@ class AdaptiveDashboardUI(QMainWindow):
         layout.setContentsMargins(15, 30, 15, 15)
         
         # Allow the instruments panel to grow as needed so nothing is clipped
-        group.setMinimumSize(450, 520)
+        group.setMinimumSize(420, 430)
         group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # Speedometer
@@ -446,8 +451,8 @@ class AdaptiveDashboardUI(QMainWindow):
         layout.setContentsMargins(15, 30, 15, 15)
         
         # Set consistent size to maintain layout consistency
-        group.setMinimumSize(350, 330)
-        group.setMaximumSize(16777215, 380)  # Use max int for unlimited width expansion
+        group.setMinimumSize(350, 340)
+        group.setMaximumSize(16777215, 460)  # Use max int for unlimited width expansion
         group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         # Driver state label
@@ -537,8 +542,8 @@ class AdaptiveDashboardUI(QMainWindow):
         layout.setContentsMargins(15, 30, 15, 15)
         
         # Set consistent size to maintain layout consistency
-        group.setMinimumSize(350, 330)
-        group.setMaximumSize(16777215, 380)  # Use max int for unlimited width expansion
+        group.setMinimumSize(350, 340)
+        group.setMaximumSize(16777215, 460)  # Use max int for unlimited width expansion
         group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self.behavior_label = QLabel("BEHAVIOR: SAFE")
@@ -1026,7 +1031,7 @@ class AdaptiveDashboardUI(QMainWindow):
                     self.left_splitter.setSizes(self.left_splitter.sizes())  # Reapply sizes
                 except:
                     # Fallback to defaults if sizes aren't available yet
-                    self.content_splitter.setSizes([600, 450, 450])
+                    self.content_splitter.setSizes([520, 480, 400])
                     self.left_splitter.setSizes([500, 300])
 
     # -----------------------------
