@@ -857,6 +857,7 @@ class AdaptiveDashboardUI(QMainWindow):
                     self.lights_btn.setChecked(False)
 
             # Driver state
+            self._drowsiness_alarm_tick(driver_state)
             state_text = driver_state.state_classification.upper()
             if not getattr(driver_state, 'calibrated', True):
                 pct = int(getattr(driver_state, 'calibration_progress', 0.0) * 100)
@@ -968,17 +969,6 @@ class AdaptiveDashboardUI(QMainWindow):
 
         self.current_theme = adaptation.color_theme
         self.current_complexity = adaptation.complexity
-
-        # --- Play alarm every time drowsiness / fatigue is detected ---
-        reason_upper = adaptation.reason.upper()
-        is_drowsy   = 'DROWSY' in reason_upper or 'DROWSINESS' in reason_upper
-        is_critical = 'CRITICAL' in reason_upper
-        is_fatigued = 'FATIGUE' in reason_upper
-
-        if is_drowsy or is_critical:
-            self._play_drowsy_alarm(priority=1)   # CRITICAL — 3 beeps at 880 Hz
-        elif is_fatigued:
-            self._play_drowsy_alarm(priority=2)   # WARNING  — 2 beeps at 660 Hz
 
 
     def _animate_transition(self):
@@ -1096,6 +1086,28 @@ class AdaptiveDashboardUI(QMainWindow):
         # Play audio alarm on high-priority alerts
         self._play_alarm(alert.priority)
 
+    DROWSY_ALARM_LEVEL = 0.65      # same threshold the engine uses for 'drowsy'
+    DROWSY_ALARM_REPEAT_S = 2.0    # keep sounding while drowsiness stays high
+
+    def _drowsiness_alarm_tick(self, driver_state):
+        """Sound the alarm repeatedly for as long as drowsiness is high."""
+        if not getattr(driver_state, 'calibrated', True):
+            return
+        high = (driver_state.state_classification == "drowsy"
+                or driver_state.drowsiness_level >= self.DROWSY_ALARM_LEVEL)
+        if high:
+            self.status_label.setText("DROWSY!")
+            self.status_label.setStyleSheet(
+                "color: #fff; background: #e74c3c; font-weight: bold; padding: 4px 12px; border-radius: 12px;")
+            now = __import__('time').time()
+            if now - getattr(self, '_last_drowsy_alarm', 0.0) >= self.DROWSY_ALARM_REPEAT_S:
+                self._last_drowsy_alarm = now
+                self._play_alarm(1, ignore_cooldown=True)
+        elif self.status_label.text() != "LIVE":
+            self.status_label.setText("LIVE")
+            self.status_label.setStyleSheet(
+                "color: #2ecc71; font-weight: bold; padding: 4px 12px; border: 1px solid #2ecc71; border-radius: 12px;")
+
     def _play_drowsy_alarm(self, priority):
         """Play a drowsy alarm immediately, with a shorter cooldown."""
         now = __import__('time').time()
@@ -1116,10 +1128,6 @@ class AdaptiveDashboardUI(QMainWindow):
         priority: int  1=CRITICAL, 2=WARNING, 3=INFO
         ignore_cooldown: bool - if True, bypasses the 10s repeat check
         """
-        if not _AUDIO_AVAILABLE:
-            logger.debug("Audio not available, skipping alarm")
-            return
-
         # Normalise to integer severity
         try:
             p = int(priority)
@@ -1148,6 +1156,20 @@ class AdaptiveDashboardUI(QMainWindow):
             dur   = 0.6
 
         logger.info(f"Playing alarm: priority={p}, {len(freqs)}x{freqs[0]}Hz, dur={dur}s")
+
+        # macOS: the system player works even when PortAudio cannot open a device
+        import sys, shutil, subprocess
+        if sys.platform == "darwin" and shutil.which("afplay"):
+            prev = getattr(self, '_afplay_proc', None)
+            if prev is None or prev.poll() is not None:
+                sound = {1: "Sosumi", 2: "Basso"}.get(p, "Ping")
+                self._afplay_proc = subprocess.Popen(
+                    ["afplay", "-v", "2", f"/System/Library/Sounds/{sound}.aiff"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+        if not _AUDIO_AVAILABLE:
+            logger.debug("Audio not available, skipping alarm")
+            return
 
         def _beep():
             sample_rate = 44100

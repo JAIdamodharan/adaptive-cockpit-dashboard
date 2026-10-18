@@ -53,6 +53,7 @@ flowchart LR
 - **Micro-sleep:** one continuous closure of 1.5 s or more goes straight to drowsy.
 - **Hysteresis:** separate enter and exit thresholds stop the state from flickering.
 - **Fusion with the vehicle:** a fatigued driver whose behaviour risk is above 0.5 (or stability below 0.4) is escalated to drowsy by the decision engine.
+- **Alarm:** while drowsiness stays high (drowsy state or level 0.65+), the alarm repeats every 2 s and the header turns red with "DROWSY!". On macOS it uses the system sound player, so it still works when the audio library cannot open a device.
 - **Robustness:** frames with no face or an extreme head turn are skipped, never treated as closed eyes. Processing runs at about 30 FPS so short blinks are seen.
 
 ### Evaluate and tune
