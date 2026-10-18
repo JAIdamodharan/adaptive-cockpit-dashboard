@@ -4,6 +4,10 @@ An automotive HMI simulator that watches the **driver** (webcam + computer visio
 
 *University project, Automotive Software Engineering.*
 
+[![Live demo](https://img.shields.io/badge/live%20demo-Vercel-black?logo=vercel)](https://adaptive-cockpit-dashboard.vercel.app) [![Python](https://img.shields.io/badge/python-3.11-blue)](#getting-started) [![Tests](https://img.shields.io/badge/tests-pytest%20%2B%20node-brightgreen)](#tests)
+
+**Try it in your browser (no install): https://adaptive-cockpit-dashboard.vercel.app**
+
 ![Dashboard](docs/images/dashboard.png)
 
 <sub>Danger theme (critical state): red gauges and bars, minimal UI.</sub>
@@ -239,7 +243,8 @@ Tune thresholds in [`config/settings.json`](config/settings.json): EAR drowsines
 ## Tests
 
 ```bash
-pytest tests/
+pytest tests/                 # Python (desktop app and engine)
+node --test web/engine.test.mjs  # JavaScript port used by the web version
 ```
 
 ## Security notes
