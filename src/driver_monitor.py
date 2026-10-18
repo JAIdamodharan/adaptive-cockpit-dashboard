@@ -219,6 +219,8 @@ class DriverMonitor(QObject):
         self._last_emotion = ("neutral", 0.5)
         self._last_emit = 0.0
         self.yawn_total = 0
+        self.latest_frame = None          # BGR preview with overlay, read by the UI
+        self._overlay_pts = []
 
         # New Feature tracking
         self.consecutive_yawn_frames = 0
@@ -439,6 +441,7 @@ class DriverMonitor(QObject):
             
             # Process frame
             self._process_frame(frame)
+            self._build_preview(frame)
             
             # Emit at most ~10 Hz; processing runs faster so short blinks are not missed
             now = time.time()
@@ -546,6 +549,26 @@ class DriverMonitor(QObject):
                 self._simplified_detection_with_context(gray, timestamp)
             
 
+    def _build_preview(self, frame):
+        """Small mirrored preview with eye/mouth points and a state-coloured border."""
+        try:
+            h, w = frame.shape[:2]
+            scale = 360.0 / w
+            img = cv2.flip(cv2.resize(frame, (360, int(h * scale))), 1)
+            ph, pw = img.shape[:2]
+            st = self.current_state
+            color = {"normal": (113, 204, 46), "fatigued": (15, 196, 241), "drowsy": (60, 76, 231)}.get(
+                st.state_classification, (255, 160, 90))
+            for (x, y) in self._overlay_pts:
+                cv2.circle(img, (int((1 - x) * pw), int(y * ph)), 2, (255, 255, 0), -1)
+            cv2.rectangle(img, (0, 0), (pw - 1, ph - 1), color, 4)
+            label = ("CALIBRATING %d%%" % int(st.calibration_progress * 100)) if not st.calibrated \
+                else "%s  PERCLOS %d%%" % (st.state_classification.upper(), int(st.perclos * 100))
+            cv2.putText(img, label, (8, ph - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2, cv2.LINE_AA)
+            self.latest_frame = img
+        except Exception as e:
+            logger.debug(f"Preview failed: {e}")
+
     def recalibrate(self):
         """Forget the learned baseline and learn it again (e.g. new driver or camera angle)."""
         self.engine.reset()
@@ -577,6 +600,9 @@ class DriverMonitor(QObject):
         smoothed_ear = 0.6 * ear + 0.4 * self.prev_ear
         self.prev_ear = smoothed_ear
         self.ear_history.append(smoothed_ear)
+
+        eye_idx = [362, 385, 387, 263, 373, 380, 33, 160, 158, 133, 153, 144, 13, 14, 78, 308]
+        self._overlay_pts = [(landmarks.landmark[i].x, landmarks.landmark[i].y) for i in eye_idx]
 
         mar = self._calculate_mar_mediapipe(landmarks)
         smoothed_mar = 0.5 * mar + 0.5 * self.prev_mar
@@ -620,6 +646,7 @@ class DriverMonitor(QObject):
 
     def _handle_no_face(self, timestamp):
         """Face lost / unusable frame: never fabricate data and never count it as closed eyes."""
+        self._overlay_pts = []
         assessment = self.engine.update(timestamp, None)
         prev = self.current_state
         state = prev.state_classification if assessment.state != "normal" else "normal"

@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QSplitter, QScrollArea, QStatusBar, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSlot, QPropertyAnimation, QEasingCurve, QRect, QRectF, QPointF
-from PyQt5.QtGui import QFont, QColor, QLinearGradient, QRadialGradient, QPainter, QBrush, QPixmap, QPen
+from PyQt5.QtGui import QImage, QFont, QColor, QLinearGradient, QRadialGradient, QPainter, QBrush, QPixmap, QPen
 try:
     import sounddevice as sd
     _AUDIO_AVAILABLE = True
@@ -600,6 +600,18 @@ class AdaptiveDashboardUI(QMainWindow):
         layout.setSpacing(10)
         layout.setContentsMargins(15, 30, 15, 15)
 
+        # Live driver camera preview
+        self.camera_label = QLabel("CAMERA OFF\nNo video from the driver monitor")
+        self.camera_label.setAlignment(Qt.AlignCenter)
+        self.camera_label.setMinimumHeight(230)
+        self.camera_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.camera_label.setStyleSheet(
+            "background: #05070a; color: #8b949e; border: 1px solid #30363d; border-radius: 10px;")
+        layout.addWidget(self.camera_label)
+        self.camera_timer = QTimer(self)
+        self.camera_timer.timeout.connect(self._update_camera_preview)
+        self.camera_timer.start(66)  # ~15 FPS
+
         # Active alerts scroll area
         scroll_area = QScrollArea()
         scroll_widget = QWidget()
@@ -927,6 +939,20 @@ class AdaptiveDashboardUI(QMainWindow):
     # -----------------------------
     # Adaptive methods
     # -----------------------------
+    def _update_camera_preview(self):
+        frame = getattr(self.driver_monitor, 'latest_frame', None)
+        if frame is None:
+            return
+        try:
+            h, w = frame.shape[:2]
+            img = QImage(frame.data, w, h, 3 * w, QImage.Format_BGR888).copy()
+            pix = QPixmap.fromImage(img).scaled(
+                self.camera_label.width() - 4, self.camera_label.height() - 4,
+                Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.camera_label.setPixmap(pix)
+        except Exception as e:
+            logger.debug(f"Camera preview update failed: {e}")
+
     @pyqtSlot(object)
     def adapt_interface(self, adaptation):
         """Adapt the interface based on decision engine output"""
