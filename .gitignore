@@ -1,0 +1,14 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.log
+.DS_Store
+.env
+.env.*
+*.pem
+*.key
+# model weights (large) - see README
+*.h5
+models/
+camera_config.json

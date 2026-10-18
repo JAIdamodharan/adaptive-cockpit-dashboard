@@ -1,0 +1,65 @@
+{
+  "system": {
+    "name": "AI-Powered Adaptive Vehicle Dashboard",
+    "version": "1.0.0",
+    "update_interval_ms": 500
+  },
+  
+  "vehicle_simulator": {
+    "max_speed": 200.0,
+    "max_rpm": 8000,
+    "speed_limit": 120.0,
+    "overheat_threshold": 110.0,
+    "acceleration_rate": 5.0,
+    "brake_deceleration": 15.0,
+    "fuel_consumption_base": 0.01,
+    "fuel_consumption_speed_factor": 0.0001
+  },
+  
+  "driver_monitor": {
+    "camera_index": 0,
+    "use_dlib": false,
+    "face_detection_model": "models/shape_predictor_68_face_landmarks.dat",
+    "ear_threshold_drowsy": 0.20,
+    "ear_threshold_alert": 0.25,
+    "consecutive_frames_threshold": 5,
+    "processing_fps": 10
+  },
+  
+  "behavior_analyzer": {
+    "analysis_window_seconds": 30.0,
+    "rapid_accel_threshold": 10.0,
+    "hard_brake_threshold": 15.0,
+    "aggression_weight": 0.4,
+    "instability_weight": 0.3,
+    "overspeed_weight": 0.3
+  },
+  
+  "decision_engine": {
+    "enable_adaptive_ui": true,
+    "alert_persistence_critical": -1,
+    "alert_duration_high": 10,
+    "alert_duration_medium": 8,
+    "alert_duration_low": 5
+  },
+  
+  "dashboard_ui": {
+    "window_width": 1400,
+    "window_height": 900,
+    "default_theme": "standard",
+    "enable_auto_drive": true,
+    "show_debug_info": false
+  },
+  
+  "logging": {
+    "level": "INFO",
+    "file": "dashboard_system.log",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  },
+  
+  "testing": {
+    "enable_simulation_mode": false,
+    "use_recorded_video": null,
+    "mock_driver_state": false
+  }
+}

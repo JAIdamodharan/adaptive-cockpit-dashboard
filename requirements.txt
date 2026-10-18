@@ -1,0 +1,13 @@
+PyQt5>=5.15.11
+
+pyqtgraph>=0.13.3
+numpy>=1.26.0
+scipy>=1.10.1
+pandas>=2.0.3
+
+opencv-python>=4.8.0.74
+mediapipe>=0.10.9
+
+pytest>=7.4.0
+pytest-qt>=4.2.0
+pytest-cov>=4.1.0
