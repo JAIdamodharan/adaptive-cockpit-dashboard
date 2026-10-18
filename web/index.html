@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adaptive Cockpit</title>
+<meta name="description" content="Browser-based driver drowsiness monitor. Video is processed on your device and never uploaded.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%232ecc71'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-theme="standard">
+<header>
+  <h1>ADAPTIVE COCKPIT</h1>
+  <span id="badge" class="badge">IDLE</span>
+</header>
+
+<main>
+  <section class="card" id="instruments">
+    <h2>Vehicle instruments</h2>
+    <div class="gauges">
+      <canvas id="speedGauge" width="260" height="260"></canvas>
+      <canvas id="drowsyGauge" width="260" height="260"></canvas>
+    </div>
+    <div class="row"><span>Fuel</span><div class="bar"><i id="fuelBar"></i></div></div>
+    <div class="row"><span>Temp</span><div class="bar"><i id="tempBar"></i></div></div>
+    <div class="buttons">
+      <button id="accel">Accelerate</button>
+      <button id="brake">Brake</button>
+    </div>
+  </section>
+
+  <section class="card" id="driver">
+    <h2>Driver monitoring</h2>
+    <div id="stateText">Start the camera to begin</div>
+    <div class="row"><span>Drowsiness</span><div class="bar"><i id="drowsyBar"></i></div></div>
+    <dl>
+      <dt>EAR</dt><dd id="ear">–</dd>
+      <dt>Baseline EAR</dt><dd id="baseline">–</dd>
+      <dt>PERCLOS (30 s)</dt><dd id="perclos">–</dd>
+      <dt>MAR</dt><dd id="mar">–</dd>
+      <dt>Blinks / min</dt><dd id="blinks">–</dd>
+      <dt>Yawns</dt><dd id="yawns">0</dd>
+      <dt>Head pitch / yaw</dt><dd id="pose">–</dd>
+    </dl>
+    <div class="buttons">
+      <button id="recal" disabled>Recalibrate</button>
+    </div>
+  </section>
+
+  <section class="card" id="camera">
+    <h2>Camera &amp; alerts</h2>
+    <div class="video-wrap">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="placeholder">Camera off</div>
+    </div>
+    <div class="buttons">
+      <button id="startCam" class="primary">Start camera</button>
+      <button id="startDemo">Demo (no camera)</button>
+      <button id="stop" disabled>Stop</button>
+    </div>
+    <label class="check"><input type="checkbox" id="sound" checked> Alarm sound</label>
+    <p class="note">Video is processed in your browser and never uploaded. Look at the road for 10 seconds while it calibrates, then close your eyes for 2 seconds to test the alarm.</p>
+    <ul id="log"></ul>
+  </section>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
