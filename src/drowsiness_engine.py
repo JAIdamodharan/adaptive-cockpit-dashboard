@@ -192,9 +192,12 @@ class BlinkTracker:
 class PerclosWindow:
     """Time-weighted fraction of a sliding window spent in a given flag state."""
 
-    def __init__(self, window_s: float, max_gap_s: float = 1.0):
+    def __init__(self, window_s: float, max_gap_s: float = 1.0, min_span_s: float = 15.0):
         self.window_s = window_s
         self.max_gap_s = max_gap_s
+        # Ratios over a very short history are meaningless (one closed frame would read
+        # as 100%), so report 0 until enough time has been observed.
+        self.min_span_s = min_span_s
         self._samples: Deque[Tuple[float, bool]] = deque()
 
     def reset(self):
@@ -208,6 +211,8 @@ class PerclosWindow:
 
     def ratio(self) -> float:
         if len(self._samples) < 2:
+            return 0.0
+        if self._samples[-1][0] - self._samples[0][0] < self.min_span_s:
             return 0.0
         total = flagged = 0.0
         prev_t, prev_f = self._samples[0]

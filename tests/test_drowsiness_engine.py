@@ -99,7 +99,7 @@ def test_yawn_needs_duration():
 
 def test_perclos_time_weighted():
     w = PerclosWindow(60)
-    for i in range(100):
+    for i in range(300):
         w.add(i * 0.1, i % 2 == 0)
     assert 0.4 < w.ratio() < 0.6
 
@@ -113,3 +113,12 @@ def test_vehicle_fusion_escalates_fatigue():
     assert de._driver_class() == "fatigued"
     de.behavior_state = SimpleNamespace(risk_index=0.7, stability_score=0.9)
     assert de._driver_class() == "drowsy"
+
+
+def test_no_false_alarm_right_after_calibration():
+    # Regression: a closed frame just after calibration used to read as PERCLOS 100%
+    e, t = calibrated_engine()
+    t, r = run(e, t, 0.4, lambda tt: 0.10)
+    assert r.state == "normal"
+    t, r = run(e, t, 5, lambda tt: 0.30)
+    assert r.state == "normal"
