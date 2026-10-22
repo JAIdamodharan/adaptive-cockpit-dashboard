@@ -7,6 +7,12 @@ import time
 from src.vehicle_simulator import VehicleSimulator, VehicleState
 
 
+def step(sim, seconds):
+    """Advance the physics by `seconds` without waiting (the Qt timer needs an event loop)."""
+    sim.last_update_time = time.time() - seconds
+    sim._update_simulation()
+
+
 class TestVehicleSimulator:
     """Test suite for VehicleSimulator class"""
     
@@ -14,6 +20,22 @@ class TestVehicleSimulator:
     def simulator(self):
         """Create a vehicle simulator instance for testing"""
         return VehicleSimulator()
+
+    @pytest.fixture
+    def driving(self, simulator):
+        """Simulator with the engine on and PARK released (the app starts parked)"""
+        simulator.start()
+        simulator.disengage_park()
+        yield simulator
+        simulator.stop()
+
+    def test_cannot_accelerate_while_parked(self, simulator):
+        simulator.start()
+        simulator.set_accelerator(1.0)
+        step(simulator, 5)
+        assert simulator.state.speed == 0.0
+        assert simulator.state.gear == 'P'
+        simulator.stop()
     
     def test_initialization(self, simulator):
         """Test simulator initializes with correct default values"""
@@ -36,55 +58,47 @@ class TestVehicleSimulator:
         assert state.engine_running == True
         assert state.rpm == simulator.IDLE_RPM
     
-    def test_acceleration(self, simulator):
+    def test_acceleration(self, driving):
         """Test vehicle accelerates when accelerator is pressed"""
-        simulator.start()
-        initial_speed = simulator.state.speed
-        
-        simulator.set_accelerator(0.8)
-        time.sleep(1.5)  # Allow acceleration
-        
-        final_speed = simulator.state.speed
-        assert final_speed > initial_speed
+        initial_speed = driving.state.speed
+
+        driving.set_accelerator(0.8)
+        step(driving, 5.0)
+
+        assert driving.state.speed > initial_speed
+        assert driving.state.speed == pytest.approx(driving.ACCELERATION_RATE * 0.8 * 5.0, rel=0.05)
     
-    def test_braking(self, simulator):
+    def test_braking(self, driving):
         """Test vehicle decelerates when brake is pressed"""
-        simulator.start()
-        
-        # First accelerate
-        simulator.set_accelerator(0.8)
-        time.sleep(2.0)
-        speed_before_brake = simulator.state.speed
-        
-        # Then brake
-        simulator.set_accelerator(0.0)
-        simulator.set_brake(0.8)
-        time.sleep(1.0)
-        
-        speed_after_brake = simulator.state.speed
-        assert speed_after_brake < speed_before_brake
+        driving.set_accelerator(0.8)
+        step(driving, 20.0)
+        speed_before_brake = driving.state.speed
+        assert speed_before_brake > 0
+
+        driving.set_accelerator(0.0)
+        driving.set_brake(0.8)
+        step(driving, 2.0)
+
+        assert driving.state.speed < speed_before_brake
     
-    def test_fuel_consumption(self, simulator):
+    def test_fuel_consumption(self, driving):
         """Test fuel level decreases during driving"""
-        simulator.start()
-        initial_fuel = simulator.state.fuel_level
-        
-        simulator.set_accelerator(0.6)
-        time.sleep(3.0)
-        
-        final_fuel = simulator.state.fuel_level
-        assert final_fuel < initial_fuel
+        initial_fuel = driving.state.fuel_level
+
+        driving.set_accelerator(0.6)
+        step(driving, 30.0)
+
+        assert driving.state.fuel_level < initial_fuel
     
-    def test_rpm_increases_with_speed(self, simulator):
-        """Test RPM increases proportionally with speed"""
-        simulator.start()
-        
-        simulator.set_accelerator(0.8)
-        time.sleep(2.0)
-        
-        state = simulator.state
-        assert state.rpm > simulator.IDLE_RPM
+    def test_rpm_increases_with_speed(self, driving):
+        """Test RPM increases with speed and a gear is selected"""
+        driving.set_accelerator(0.8)
+        step(driving, 20.0)
+
+        state = driving.state
         assert state.speed > 0
+        assert state.rpm > driving.IDLE_RPM
+        assert state.gear in ('1', '2', '3', '4', '5', '6')
     
     def test_overspeed_detection(self, simulator):
         """Test overspeed flag is set when speed limit exceeded"""
@@ -128,16 +142,15 @@ class TestVehicleSimulator:
         simulator.toggle_headlights()
         assert simulator.state.headlights == (not initial_state)
     
-    def test_odometer_increases(self, simulator):
+    def test_odometer_increases(self, driving):
         """Test odometer increases with travel"""
-        simulator.start()
-        initial_odometer = simulator.state.odometer
-        
-        simulator.set_accelerator(0.6)
-        time.sleep(2.0)
-        
-        final_odometer = simulator.state.odometer
-        assert final_odometer > initial_odometer
+        initial_odometer = driving.state.odometer
+
+        driving.set_accelerator(0.6)
+        step(driving, 20.0)   # builds speed
+        step(driving, 10.0)   # travels at speed
+
+        assert driving.state.odometer > initial_odometer
     
     def test_engine_stop(self, simulator):
         """Test engine stops correctly"""
@@ -168,6 +181,7 @@ class TestVehicleState:
             timestamp=time.time(),
             speed=100.0,
             rpm=3000,
+            gear='4',
             fuel_level=50.0,
             engine_temp=90.0,
             odometer=1234.5,
@@ -189,6 +203,7 @@ class TestVehicleState:
             timestamp=time.time(),
             speed=80.0,
             rpm=2500,
+            gear='3',
             fuel_level=60.0,
             engine_temp=85.0,
             odometer=500.0,
